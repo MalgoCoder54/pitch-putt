@@ -1,18 +1,14 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#0c1a0c" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="theme-color" content="#0c1a0c"/>
   <title>Pitch & Putt - Segnapunti</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛳</text></svg>" />
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body, #root { height: 100%; }
-    body { background: #0a1a0a; -webkit-tap-highlight-color: transparent; }
-  </style>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛳</text></svg>"/>
+  <style>*{box-sizing:border-box;margin:0;padding:0}html,body,#root{height:100%}body{background:#0a1a0a;-webkit-tap-highlight-color:transparent}</style>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 </head>
@@ -27,12 +23,11 @@ const {
 const PAR_PER_HOLE = 3;
 const PHASES = {
   SETUP: 0,
-  PLAY: 1,
-  SUMMARY: 2
+  PICK_HOLE: 1,
+  SCORE: 2,
+  SUMMARY: 3
 };
-const fonts = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Outfit:wght@300;400;600;700;800&display=swap');
-`;
+const fonts = `@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Outfit:wght@300;400;600;700;800&display=swap');`;
 function PitchAndPutt() {
   const [phase, setPhase] = useState(PHASES.SETUP);
   const [players, setPlayers] = useState([{
@@ -40,35 +35,13 @@ function PitchAndPutt() {
   }, {
     name: ""
   }]);
-  const [holeConfig, setHoleConfig] = useState(Array.from({
-    length: 9
-  }, (_, i) => ({
-    number: i + 1,
-    times: 1
-  })));
-  const [scores, setScores] = useState({});
+  const [playedHoles, setPlayedHoles] = useState([]);
+  const [currentHoleNumber, setCurrentHoleNumber] = useState(null);
+  const [currentScores, setCurrentScores] = useState({});
   const [bonusHoles, setBonusHoles] = useState({});
-  const [activeHoleIdx, setActiveHoleIdx] = useState(0);
-  const [showConfig, setShowConfig] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
-
-  // Build the flat list of "play holes" from config
-  const playHoles = useMemo(() => {
-    const holes = [];
-    holeConfig.forEach(h => {
-      for (let t = 1; t <= h.times; t++) {
-        holes.push({
-          number: h.number,
-          rep: t,
-          totalReps: h.times,
-          key: `${h.number}-${t}`,
-          label: h.times > 1 ? `Buca ${h.number} (${t}/${h.times})` : `Buca ${h.number}`
-        });
-      }
-    });
-    return holes;
-  }, [holeConfig]);
-  const totalPar = playHoles.length * PAR_PER_HOLE;
+  const [editingHoleIdx, setEditingHoleIdx] = useState(null);
+  const PLAYER_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4"];
 
   // Player management
   const addPlayer = () => setPlayers([...players, {
@@ -86,41 +59,88 @@ function PitchAndPutt() {
     };
     setPlayers(np);
   };
-
-  // Hole config
-  const setHoleTimes = (holeIdx, times) => {
-    const nc = [...holeConfig];
-    nc[holeIdx] = {
-      ...nc[holeIdx],
-      times: Math.max(1, Math.min(5, times))
-    };
-    setHoleConfig(nc);
+  const startGame = () => {
+    const validPlayers = players.filter(p => p.name.trim());
+    if (validPlayers.length === 0) return;
+    setPlayers(validPlayers);
+    setPlayedHoles([]);
+    setBonusHoles({});
+    setPhase(PHASES.PICK_HOLE);
   };
-
-  // Score management
-  const getScore = (playerIdx, holeKey) => scores[`${playerIdx}-${holeKey}`] || {
-    strokes: 0,
-    penalties: 0
+  const pickHole = num => {
+    setCurrentHoleNumber(num);
+    const initScores = {};
+    players.forEach((_, i) => {
+      initScores[i] = {
+        strokes: 0,
+        penalties: 0
+      };
+    });
+    setCurrentScores(initScores);
+    setPhase(PHASES.SCORE);
   };
-  const setScore = (playerIdx, holeKey, field, value) => {
-    const key = `${playerIdx}-${holeKey}`;
-    const current = scores[key] || {
-      strokes: 0,
-      penalties: 0
-    };
-    setScores({
-      ...scores,
-      [key]: {
-        ...current,
+  const updateScore = (pi, field, value) => {
+    setCurrentScores(prev => ({
+      ...prev,
+      [pi]: {
+        ...prev[pi],
         [field]: Math.max(0, value)
       }
+    }));
+  };
+  const confirmHole = () => {
+    const timesPlayed = playedHoles.filter(h => h.number === currentHoleNumber).length;
+    setPlayedHoles([...playedHoles, {
+      number: currentHoleNumber,
+      rep: timesPlayed + 1,
+      scores: {
+        ...currentScores
+      }
+    }]);
+    setCurrentHoleNumber(null);
+    setCurrentScores({});
+    setPhase(PHASES.PICK_HOLE);
+  };
+  const startEditHole = hi => {
+    const h = playedHoles[hi];
+    setCurrentScores({
+      ...h.scores
+    });
+    setCurrentHoleNumber(h.number);
+    setEditingHoleIdx(hi);
+    setPhase(PHASES.SCORE);
+  };
+  const confirmEditHole = () => {
+    const updated = [...playedHoles];
+    updated[editingHoleIdx] = {
+      ...updated[editingHoleIdx],
+      scores: {
+        ...currentScores
+      }
+    };
+    setPlayedHoles(updated);
+    setEditingHoleIdx(null);
+    setCurrentHoleNumber(null);
+    setCurrentScores({});
+    setPhase(PHASES.PICK_HOLE);
+  };
+  const undoLastHole = () => {
+    if (playedHoles.length === 0) return;
+    const lastIdx = playedHoles.length - 1;
+    setPlayedHoles(playedHoles.slice(0, -1));
+    setBonusHoles(prev => {
+      const next = {
+        ...prev
+      };
+      Object.keys(next).forEach(k => {
+        if (next[k] === lastIdx) delete next[k];
+      });
+      return next;
     });
   };
-
-  // Bonus hole
-  const toggleBonusHole = (playerIdx, holeKey) => {
+  const toggleBonusHole = (playerIdx, holeIdx) => {
     setBonusHoles(prev => {
-      if (prev[playerIdx] === holeKey) {
+      if (prev[playerIdx] === holeIdx) {
         const next = {
           ...prev
         };
@@ -129,55 +149,67 @@ function PitchAndPutt() {
       }
       return {
         ...prev,
-        [playerIdx]: holeKey
+        [playerIdx]: holeIdx
       };
     });
   };
-
-  // Calculations
-  const getPlayerTotal = (playerIdx, excludeBonus = false) => {
+  const getPlayerTotal = useCallback((playerIdx, excludeBonus = false) => {
     let total = 0;
-    playHoles.forEach(h => {
-      if (excludeBonus && bonusHoles[playerIdx] === h.key) return;
-      const s = getScore(playerIdx, h.key);
+    playedHoles.forEach((h, hi) => {
+      if (excludeBonus && bonusHoles[playerIdx] === hi) return;
+      const s = h.scores[playerIdx] || {
+        strokes: 0,
+        penalties: 0
+      };
       total += s.strokes + s.penalties;
     });
     return total;
-  };
-  const getPlayerPar = playerIdx => {
-    const holesCount = bonusHoles[playerIdx] ? playHoles.length - 1 : playHoles.length;
-    return holesCount * PAR_PER_HOLE;
-  };
-  const getPlayerDiff = playerIdx => {
-    return getPlayerTotal(playerIdx, true) - getPlayerPar(playerIdx);
-  };
-
-  // Start game
-  const startGame = () => {
-    const validPlayers = players.filter(p => p.name.trim());
-    if (validPlayers.length === 0) return;
-    setPlayers(validPlayers);
-    setScores({});
-    setBonusHoles({});
-    setActiveHoleIdx(0);
-    setPhase(PHASES.PLAY);
-  };
-  const currentHole = playHoles[activeHoleIdx];
-
-  // Build ranked players data
+  }, [playedHoles, bonusHoles]);
+  const getPlayerPar = useCallback(playerIdx => {
+    const count = bonusHoles[playerIdx] !== undefined ? playedHoles.length - 1 : playedHoles.length;
+    return count * PAR_PER_HOLE;
+  }, [playedHoles, bonusHoles]);
+  const getPlayerDiff = useCallback(playerIdx => getPlayerTotal(playerIdx, true) - getPlayerPar(playerIdx), [getPlayerTotal, getPlayerPar]);
+  const getHolesWon = useCallback(() => {
+    const wins = {};
+    players.forEach((_, i) => {
+      wins[i] = 0;
+    });
+    playedHoles.forEach(h => {
+      let best = Infinity;
+      let bestP = [];
+      players.forEach((_, pi) => {
+        const s = h.scores[pi] || {
+          strokes: 0,
+          penalties: 0
+        };
+        const t = s.strokes + s.penalties;
+        if (t > 0 && t < best) {
+          best = t;
+          bestP = [pi];
+        } else if (t > 0 && t === best) {
+          bestP.push(pi);
+        }
+      });
+      if (bestP.length === 1) wins[bestP[0]]++;
+    });
+    return wins;
+  }, [playedHoles, players]);
   const getRankedPlayers = useCallback(() => {
+    const hw = getHolesWon();
     return players.map((p, i) => ({
       name: p.name,
       idx: i,
       diff: getPlayerDiff(i),
       total: getPlayerTotal(i, true),
-      totalRaw: getPlayerTotal(i, false),
       par: getPlayerPar(i),
-      bonusHole: bonusHoles[i] ? playHoles.find(h => h.key === bonusHoles[i]) : null
+      holesWon: hw[i] || 0,
+      bonusHoleIdx: bonusHoles[i]
     })).sort((a, b) => a.diff - b.diff);
-  }, [players, scores, bonusHoles, playHoles]);
+  }, [players, getPlayerDiff, getPlayerTotal, getPlayerPar, getHolesWon, bonusHoles]);
+  const holePlayCount = useCallback(num => playedHoles.filter(h => h.number === num).length, [playedHoles]);
 
-  // Generate text note
+  // Export text
   const exportText = useCallback(() => {
     const now = new Date();
     const date = now.toLocaleDateString("it-IT", {
@@ -186,65 +218,51 @@ function PitchAndPutt() {
       year: "numeric"
     });
     const ranked = getRankedPlayers();
-    let txt = `⛳ PITCH & PUTT — ${date}\n`;
-    txt += `${"─".repeat(36)}\n\n`;
-    txt += `CLASSIFICA\n`;
+    let txt = `⛳ PITCH & PUTT — ${date}\n${"─".repeat(36)}\n\nCLASSIFICA\n`;
     ranked.forEach((p, rank) => {
       const medal = rank === 0 ? "🏆" : `${rank + 1}°`;
       const diffStr = p.diff > 0 ? `+${p.diff}` : p.diff === 0 ? "E" : `${p.diff}`;
-      txt += `${medal} ${p.name}  →  ${p.total} colpi  (${diffStr})\n`;
-      if (p.bonusHole) txt += `   Buca bonus: ${p.bonusHole.number}\n`;
+      txt += `${medal} ${p.name}  →  ${p.total} colpi (${diffStr}) | Buche vinte: ${p.holesWon}\n`;
+      if (p.bonusHoleIdx !== undefined) txt += `   Bonus: Buca ${playedHoles[p.bonusHoleIdx]?.number}\n`;
     });
-    txt += `\nPar: ${ranked[0]?.par || playHoles.length * PAR_PER_HOLE}\n`;
-    txt += `Buche giocate: ${playHoles.length}\n\n`;
-    txt += `${"─".repeat(36)}\n`;
-    txt += `DETTAGLIO BUCHE\n\n`;
-    // Header
-    const colW = 10;
-    txt += "Buca".padEnd(8);
+    txt += `\nPercorso: ${playedHoles.map(h => h.number).join(" → ")}\n`;
+    txt += `${playedHoles.length} buche · Par ${playedHoles.length * PAR_PER_HOLE}\n\n`;
+    txt += `${"─".repeat(36)}\nDETTAGLIO\n\n`;
+    const cw = 10;
+    txt += "#".padEnd(4) + "Buca".padEnd(6);
     players.forEach(p => {
-      txt += p.name.substring(0, colW).padEnd(colW + 2);
+      txt += p.name.substring(0, cw).padEnd(cw + 2);
     });
-    txt += "\n";
-    txt += `${"─".repeat(8 + players.length * (colW + 2))}\n`;
-    playHoles.forEach(h => {
-      const label = h.totalReps > 1 ? `${h.number}(${h.rep})` : `${h.number}`;
-      txt += label.padEnd(8);
+    txt += "\n" + "─".repeat(10 + players.length * (cw + 2)) + "\n";
+    playedHoles.forEach((h, hi) => {
+      txt += `${hi + 1}`.padEnd(4) + `${h.number}`.padEnd(6);
       players.forEach((_, pi) => {
-        const s = getScore(pi, h.key);
+        const s = h.scores[pi] || {
+          strokes: 0,
+          penalties: 0
+        };
         const total = s.strokes + s.penalties;
-        const isBonus = bonusHoles[pi] === h.key;
-        let cell = total === 0 ? "–" : `${total}`;
-        if (s.penalties > 0 && !isBonus) cell += `(${s.strokes}+${s.penalties})`;
-        if (isBonus) cell = `[${cell}★]`;
-        txt += cell.padEnd(colW + 2);
+        const isB = bonusHoles[pi] === hi;
+        let c = total === 0 ? "–" : `${total}`;
+        if (s.penalties > 0 && !isB) c += `(${s.strokes}+${s.penalties})`;
+        if (isB) c = `[${c}★]`;
+        txt += c.padEnd(cw + 2);
       });
       txt += "\n";
     });
-    txt += `${"─".repeat(8 + players.length * (colW + 2))}\n`;
-    txt += "TOT".padEnd(8);
+    txt += "─".repeat(10 + players.length * (cw + 2)) + "\n";
+    txt += "".padEnd(4) + "TOT".padEnd(6);
     players.forEach((_, pi) => {
-      txt += `${getPlayerTotal(pi, true)}`.padEnd(colW + 2);
+      txt += `${getPlayerTotal(pi, true)}`.padEnd(cw + 2);
     });
-    txt += "\n\n★ = buca bonus (esclusa dal conteggio)\n";
-    // Copy to clipboard and try share
-    if (navigator.share) {
-      navigator.share({
-        title: "Pitch & Putt",
-        text: txt
-      }).catch(() => {});
-    } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(txt).then(() => {
-        alert("Risultati copiati negli appunti!");
-      }).catch(() => {
-        prompt("Copia il testo:", txt);
-      });
-    } else {
-      prompt("Copia il testo:", txt);
-    }
-  }, [players, scores, bonusHoles, playHoles]);
+    txt += "\n\n★ = buca bonus\n";
+    if (navigator.share) navigator.share({
+      title: "Pitch & Putt",
+      text: txt
+    }).catch(() => {});else if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => alert("Copiato!")).catch(() => prompt("Copia:", txt));else prompt("Copia:", txt);
+  }, [players, playedHoles, bonusHoles, getRankedPlayers, getPlayerTotal]);
 
-  // Generate image
+  // Export image
   const exportImage = useCallback(() => {
     const ranked = getRankedPlayers();
     const now = new Date();
@@ -254,42 +272,34 @@ function PitchAndPutt() {
       year: "numeric"
     });
     const dpr = window.devicePixelRatio || 2;
-    const W = 440;
-    const rowH = 32;
-    const headerH = 100;
-    const leaderH = ranked.length * 56 + 20;
-    const tableHeaderH = 36;
-    const tableH = tableHeaderH + playHoles.length * rowH + rowH + 20;
-    const footerH = 40;
+    const W = 440,
+      rowH = 32,
+      headerH = 100,
+      leaderH = ranked.length * 56 + 20,
+      tableHeaderH = 36;
+    const tableH = tableHeaderH + playedHoles.length * rowH + rowH + 20,
+      footerH = 50;
     const H = headerH + leaderH + tableH + footerH;
     const canvas = document.createElement("canvas");
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     const ctx = canvas.getContext("2d");
     ctx.scale(dpr, dpr);
-
-    // Background
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, "#0c1a0c");
     grad.addColorStop(1, "#0f2010");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
-
-    // Header
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "#fff";
     ctx.font = "bold 22px 'Segoe UI', system-ui, sans-serif";
     ctx.fillText("⛳ Pitch & Putt", 20, 38);
     ctx.fillStyle = "rgba(255,255,255,0.45)";
     ctx.font = "14px 'Segoe UI', system-ui, sans-serif";
     ctx.fillText(date, 20, 60);
-    ctx.fillText(`${playHoles.length} buche · Par ${ranked[0]?.par || playHoles.length * 3}`, 20, 80);
-
-    // Leaderboard
+    ctx.fillText(`Percorso: ${playedHoles.map(h => h.number).join("→")}`, 20, 80);
     let y = headerH;
     ranked.forEach((p, rank) => {
-      const isFirst = rank === 0;
-      // Card bg
-      ctx.fillStyle = isFirst ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.05)";
+      ctx.fillStyle = rank === 0 ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.05)";
       const rx = 20,
         ry = y,
         rw = W - 40,
@@ -306,491 +316,625 @@ function PitchAndPutt() {
       ctx.lineTo(rx, ry + r);
       ctx.quadraticCurveTo(rx, ry, rx + r, ry);
       ctx.fill();
-      // Border
-      ctx.strokeStyle = isFirst ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.08)";
+      ctx.strokeStyle = rank === 0 ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.08)";
       ctx.lineWidth = 1;
       ctx.stroke();
-      // Rank
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff";
       ctx.font = "bold 16px 'Segoe UI', system-ui, sans-serif";
       ctx.fillText(rank === 0 ? "🏆" : `${rank + 1}°`, 34, y + 30);
-      // Name
       ctx.font = "bold 15px 'Segoe UI', system-ui, sans-serif";
       ctx.fillText(p.name, 72, y + 24);
-      // Detail
       ctx.fillStyle = "rgba(255,255,255,0.4)";
       ctx.font = "11px 'Segoe UI', system-ui, sans-serif";
-      const detail = `${p.total} colpi` + (p.bonusHole ? ` · Bonus: Buca ${p.bonusHole.number}` : "");
-      ctx.fillText(detail, 72, y + 40);
-      // Diff
-      const diffStr = p.diff > 0 ? `+${p.diff}` : p.diff === 0 ? "E" : `${p.diff}`;
+      ctx.fillText(`${p.total} colpi · Vinte: ${p.holesWon}`, 72, y + 40);
+      const ds = p.diff > 0 ? `+${p.diff}` : p.diff === 0 ? "E" : `${p.diff}`;
       ctx.fillStyle = p.diff < 0 ? "#22c55e" : p.diff === 0 ? "#e2e8f0" : "#ef4444";
       ctx.font = "bold 20px 'Segoe UI', system-ui, sans-serif";
-      const diffW = ctx.measureText(diffStr).width;
-      ctx.fillText(diffStr, W - 34 - diffW, y + 32);
+      ctx.fillText(ds, W - 34 - ctx.measureText(ds).width, y + 32);
       y += 56;
     });
-
-    // Table
     y += 20;
-    const colCount = players.length + 1;
-    const col0W = 52;
-    const colPW = (W - 40 - col0W) / players.length;
-    const tableX = 20;
-    // Table header
+    const col0W = 52,
+      colPW = (W - 40 - col0W) / players.length,
+      tx = 20;
     ctx.fillStyle = "rgba(255,255,255,0.3)";
     ctx.font = "bold 10px 'Segoe UI', system-ui, sans-serif";
-    ctx.fillText("BUCA", tableX + 6, y + 14);
+    ctx.fillText("BUCA", tx + 6, y + 14);
     players.forEach((p, i) => {
-      const name = p.name.length > 8 ? p.name.substring(0, 7) + "…" : p.name;
-      ctx.fillText(name.toUpperCase(), tableX + col0W + i * colPW + 6, y + 14);
+      ctx.fillText((p.name.length > 8 ? p.name.substring(0, 7) + "…" : p.name).toUpperCase(), tx + col0W + i * colPW + 6, y + 14);
     });
     y += tableHeaderH;
     ctx.strokeStyle = "rgba(255,255,255,0.1)";
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(tableX, y - 14);
+    ctx.moveTo(tx, y - 14);
     ctx.lineTo(W - 20, y - 14);
     ctx.stroke();
-
-    // Rows
-    playHoles.forEach((h, hi) => {
+    playedHoles.forEach((h, hi) => {
       if (hi % 2 === 0) {
         ctx.fillStyle = "rgba(255,255,255,0.02)";
-        ctx.fillRect(tableX, y - 6, W - 40, rowH);
+        ctx.fillRect(tx, y - 6, W - 40, rowH);
       }
       ctx.fillStyle = "rgba(255,255,255,0.5)";
       ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
-      const lbl = h.totalReps > 1 ? `${h.number} (${h.rep})` : `${h.number}`;
-      ctx.fillText(lbl, tableX + 6, y + 14);
+      ctx.fillText(`${h.number}`, tx + 6, y + 14);
       players.forEach((_, pi) => {
-        const s = getScore(pi, h.key);
+        const s = h.scores[pi] || {
+          strokes: 0,
+          penalties: 0
+        };
         const total = s.strokes + s.penalties;
-        const isBonus = bonusHoles[pi] === h.key;
-        const diff = total - PAR_PER_HOLE;
-        if (isBonus) {
+        const isB = bonusHoles[pi] === hi;
+        const d = total - PAR_PER_HOLE;
+        if (isB) {
           ctx.fillStyle = "rgba(255,255,255,0.2)";
           ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
-          const txt = total === 0 ? "–" : `${total} ★`;
-          ctx.fillText(txt, tableX + col0W + pi * colPW + 6, y + 14);
+          ctx.fillText(total === 0 ? "–" : `${total} ★`, tx + col0W + pi * colPW + 6, y + 14);
         } else {
-          ctx.fillStyle = total === 0 ? "rgba(255,255,255,0.15)" : diff < 0 ? "#22c55e" : diff === 0 ? "#e2e8f0" : "#ef4444";
+          ctx.fillStyle = total === 0 ? "rgba(255,255,255,0.15)" : d < 0 ? "#22c55e" : d === 0 ? "#e2e8f0" : "#ef4444";
           ctx.font = "bold 13px 'Segoe UI', system-ui, sans-serif";
-          let cell = total === 0 ? "–" : `${total}`;
-          if (s.penalties > 0) cell += ` (${s.strokes}+${s.penalties})`;
-          ctx.fillText(cell, tableX + col0W + pi * colPW + 6, y + 14);
+          let c = total === 0 ? "–" : `${total}`;
+          if (s.penalties > 0) c += ` (${s.strokes}+${s.penalties})`;
+          ctx.fillText(c, tx + col0W + pi * colPW + 6, y + 14);
         }
       });
       y += rowH;
     });
-    // Total row
     ctx.strokeStyle = "#22c55e";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(tableX, y - 4);
+    ctx.moveTo(tx, y - 4);
     ctx.lineTo(W - 20, y - 4);
     ctx.stroke();
     y += 4;
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "#fff";
     ctx.font = "bold 14px 'Segoe UI', system-ui, sans-serif";
-    ctx.fillText("TOT", tableX + 6, y + 14);
+    ctx.fillText("TOT", tx + 6, y + 14);
     players.forEach((_, pi) => {
-      ctx.fillText(`${getPlayerTotal(pi, true)}`, tableX + col0W + pi * colPW + 6, y + 14);
+      ctx.fillText(`${getPlayerTotal(pi, true)}`, tx + col0W + pi * colPW + 6, y + 14);
     });
-
-    // Footer
     y += rowH + 10;
     ctx.fillStyle = "rgba(255,255,255,0.2)";
     ctx.font = "10px 'Segoe UI', system-ui, sans-serif";
-    ctx.fillText("★ = buca bonus (esclusa dal conteggio)", tableX, y + 10);
-
-    // Show as preview overlay
-    const dataUrl = canvas.toDataURL("image/png");
-    setImagePreview(dataUrl);
-  }, [players, scores, bonusHoles, playHoles]);
+    ctx.fillText("★ = buca bonus", tx, y + 10);
+    setImagePreview(canvas.toDataURL("image/png"));
+  }, [players, playedHoles, bonusHoles, getRankedPlayers, getPlayerTotal]);
   return /*#__PURE__*/React.createElement("div", {
-    style: styles.container
-  }, /*#__PURE__*/React.createElement("style", null, fonts), /*#__PURE__*/React.createElement("style", null, `
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0a1a0a; }
-        input:focus { outline: none; }
-        button:active { transform: scale(0.97); }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
-      `), /*#__PURE__*/React.createElement("div", {
-    style: styles.header
+    style: S.container
+  }, /*#__PURE__*/React.createElement("style", null, fonts), /*#__PURE__*/React.createElement("style", null, `*{box-sizing:border-box;margin:0;padding:0}body{background:#0a1a0a}input:focus{outline:none}button:active{transform:scale(0.97)}::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px}`), /*#__PURE__*/React.createElement("div", {
+    style: S.header
   }, /*#__PURE__*/React.createElement("div", {
-    style: styles.headerInner
+    style: S.headerInner
   }, /*#__PURE__*/React.createElement("div", {
-    style: styles.logoMark
+    style: {
+      fontSize: 28
+    }
   }, "\u26F3"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", {
-    style: styles.title
+    style: S.title
   }, "Pitch & Putt"), /*#__PURE__*/React.createElement("p", {
-    style: styles.subtitle
-  }, "Segnapunti"))), phase === PHASES.PLAY && /*#__PURE__*/React.createElement("button", {
-    style: styles.summaryBtn,
+    style: S.subtitle
+  }, phase === PHASES.SETUP ? "Segnapunti" : `${playedHoles.length} buc${playedHoles.length === 1 ? "a" : "he"} giocate`))), (phase === PHASES.PICK_HOLE || phase === PHASES.SCORE) && playedHoles.length > 0 && /*#__PURE__*/React.createElement("button", {
+    style: S.headerBtn,
     onClick: () => setPhase(PHASES.SUMMARY)
   }, "Classifica"), phase === PHASES.SUMMARY && /*#__PURE__*/React.createElement("button", {
-    style: styles.summaryBtn,
-    onClick: () => setPhase(PHASES.PLAY)
+    style: S.headerBtn,
+    onClick: () => setPhase(PHASES.PICK_HOLE)
   }, "\u2190 Partita")), phase === PHASES.SETUP && /*#__PURE__*/React.createElement("div", {
-    style: styles.setupContainer
+    style: S.section
   }, /*#__PURE__*/React.createElement("div", {
-    style: styles.card
+    style: S.card
   }, /*#__PURE__*/React.createElement("h2", {
-    style: styles.cardTitle
+    style: S.cardTitle
   }, "Giocatori"), /*#__PURE__*/React.createElement("div", {
-    style: styles.playersList
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
   }, players.map((p, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
-    style: styles.playerRow
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
   }, /*#__PURE__*/React.createElement("div", {
-    style: styles.playerBadge
+    style: S.badge
   }, i + 1), /*#__PURE__*/React.createElement("input", {
-    style: styles.playerInput,
+    style: S.input,
     placeholder: `Giocatore ${i + 1}`,
     value: p.name,
     onChange: e => updatePlayerName(i, e.target.value)
   }), players.length > 1 && /*#__PURE__*/React.createElement("button", {
-    style: styles.removeBtn,
+    style: S.removeBtn,
     onClick: () => removePlayer(i)
   }, "\u2715")))), /*#__PURE__*/React.createElement("button", {
-    style: styles.addPlayerBtn,
+    style: S.addBtn,
     onClick: addPlayer
-  }, "+ Aggiungi giocatore")), /*#__PURE__*/React.createElement("div", {
-    style: styles.card
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.cardHeaderRow
-  }, /*#__PURE__*/React.createElement("h2", {
-    style: styles.cardTitle
-  }, "Configurazione buche"), /*#__PURE__*/React.createElement("button", {
-    style: styles.configToggle,
-    onClick: () => setShowConfig(!showConfig)
-  }, showConfig ? "Chiudi" : "Personalizza")), /*#__PURE__*/React.createElement("p", {
-    style: styles.configHint
-  }, playHoles.length, " buche totali \xB7 Par ", totalPar), showConfig && /*#__PURE__*/React.createElement("div", {
-    style: styles.holesGrid
-  }, holeConfig.map((h, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: styles.holeConfigItem
-  }, /*#__PURE__*/React.createElement("span", {
-    style: styles.holeLabel
-  }, "Buca ", h.number), /*#__PURE__*/React.createElement("div", {
-    style: styles.timesControl
-  }, /*#__PURE__*/React.createElement("button", {
-    style: styles.timesBtn,
-    onClick: () => setHoleTimes(i, h.times - 1)
-  }, "\u2212"), /*#__PURE__*/React.createElement("span", {
-    style: styles.timesValue
-  }, "\xD7", h.times), /*#__PURE__*/React.createElement("button", {
-    style: styles.timesBtn,
-    onClick: () => setHoleTimes(i, h.times + 1)
-  }, "+")))))), /*#__PURE__*/React.createElement("button", {
+  }, "+ Aggiungi giocatore")), /*#__PURE__*/React.createElement("button", {
     style: {
-      ...styles.startBtn,
+      ...S.primaryBtn,
       opacity: players.some(p => p.name.trim()) ? 1 : 0.4
     },
     onClick: startGame,
     disabled: !players.some(p => p.name.trim())
-  }, "Inizia partita \u26F3")), phase === PHASES.PLAY && /*#__PURE__*/React.createElement("div", {
-    style: styles.playContainer
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.holeNav
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.holeNavScroll
-  }, playHoles.map((h, i) => {
-    const allFilled = players.every((_, pi) => {
-      const s = getScore(pi, h.key);
-      return s.strokes > 0;
-    });
-    return /*#__PURE__*/React.createElement("button", {
-      key: h.key,
-      style: {
-        ...styles.holeNavBtn,
-        ...(i === activeHoleIdx ? styles.holeNavBtnActive : {}),
-        ...(allFilled && i !== activeHoleIdx ? styles.holeNavBtnDone : {})
-      },
-      onClick: () => setActiveHoleIdx(i)
-    }, /*#__PURE__*/React.createElement("span", {
-      style: styles.holeNavNum
-    }, h.number), h.totalReps > 1 && /*#__PURE__*/React.createElement("span", {
-      style: styles.holeNavRep
-    }, h.rep, "/", h.totalReps));
-  }))), currentHole && /*#__PURE__*/React.createElement("div", {
-    style: styles.currentHoleHeader
+  }, "Inizia partita \u26F3")), phase === PHASES.PICK_HOLE && /*#__PURE__*/React.createElement("div", {
+    style: S.section
+  }, playedHoles.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: S.routeBar
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "rgba(255,255,255,0.4)",
+      fontSize: 12
+    }
+  }, "Percorso:"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 4
+    }
+  }, playedHoles.map((h, i) => /*#__PURE__*/React.createElement("button", {
+    key: i,
+    style: S.routeChip,
+    onClick: () => startEditHole(i)
+  }, h.number)))), /*#__PURE__*/React.createElement("div", {
+    style: S.card
   }, /*#__PURE__*/React.createElement("h2", {
-    style: styles.currentHoleTitle
-  }, currentHole.label), /*#__PURE__*/React.createElement("span", {
-    style: styles.parBadge
-  }, "Par ", PAR_PER_HOLE)), /*#__PURE__*/React.createElement("div", {
-    style: styles.scoresContainer
-  }, players.map((p, pi) => {
-    const s = getScore(pi, currentHole?.key);
+    style: {
+      ...S.cardTitle,
+      textAlign: "center"
+    }
+  }, "Scegli la buca"), /*#__PURE__*/React.createElement("div", {
+    style: S.keypad
+  }, [1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => {
+    const count = holePlayCount(num);
+    return /*#__PURE__*/React.createElement("button", {
+      key: num,
+      style: S.keypadBtn,
+      onClick: () => pickHole(num)
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 24,
+        fontWeight: 800,
+        fontFamily: "'Outfit', sans-serif"
+      }
+    }, num), count > 0 && /*#__PURE__*/React.createElement("span", {
+      style: S.keypadCount
+    }, "\xD7", count));
+  }))), playedHoles.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: S.secondaryBtn,
+    onClick: undoLastHole
+  }, "\u21A9 Annulla ultima"), /*#__PURE__*/React.createElement("button", {
+    style: S.finishBtn,
+    onClick: () => setPhase(PHASES.SUMMARY)
+  }, "Classifica \u2192"))), phase === PHASES.SCORE && currentHoleNumber && /*#__PURE__*/React.createElement("div", {
+    style: S.section
+  }, /*#__PURE__*/React.createElement("div", {
+    style: S.holeHeader
+  }, /*#__PURE__*/React.createElement("h2", {
+    style: S.holeTitle
+  }, "Buca ", currentHoleNumber), /*#__PURE__*/React.createElement("span", {
+    style: S.parBadge
+  }, "Par ", PAR_PER_HOLE)), players.map((p, pi) => {
+    const s = currentScores[pi] || {
+      strokes: 0,
+      penalties: 0
+    };
     const totalShots = s.strokes + s.penalties;
     const diff = totalShots - PAR_PER_HOLE;
-    const isBonus = bonusHoles[pi] === currentHole?.key;
     return /*#__PURE__*/React.createElement("div", {
       key: pi,
+      style: S.playerCard
+    }, /*#__PURE__*/React.createElement("div", {
+      style: S.playerCardHead
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
-        ...styles.playerCard,
-        ...(isBonus ? styles.playerCardBonus : {})
+        display: "flex",
+        alignItems: "center",
+        gap: 8
       }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: styles.playerCardHeader
-    }, /*#__PURE__*/React.createElement("div", {
-      style: styles.playerCardName
     }, /*#__PURE__*/React.createElement("span", {
-      style: styles.playerDot(pi)
-    }), p.name), totalShots > 0 && /*#__PURE__*/React.createElement("span", {
       style: {
-        ...styles.diffBadge,
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        background: PLAYER_COLORS[pi % 6],
+        display: "inline-block"
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 16,
+        fontWeight: 700,
+        color: "#fff"
+      }
+    }, p.name)), totalShots > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 13,
+        fontWeight: 700,
+        padding: "3px 10px",
+        borderRadius: 6,
         color: diff < 0 ? "#22c55e" : diff === 0 ? "#94a3b8" : "#ef4444",
         background: diff < 0 ? "rgba(34,197,94,0.12)" : diff === 0 ? "rgba(148,163,184,0.12)" : "rgba(239,68,68,0.12)"
       }
     }, diff > 0 ? `+${diff}` : diff === 0 ? "Par" : diff)), /*#__PURE__*/React.createElement("div", {
-      style: styles.scoreRow
+      style: S.scoreRow
     }, /*#__PURE__*/React.createElement("span", {
-      style: styles.scoreLabel
+      style: S.scoreLabel
     }, "Colpi"), /*#__PURE__*/React.createElement("div", {
-      style: styles.counterGroup
+      style: S.counterGroup
     }, /*#__PURE__*/React.createElement("button", {
-      style: styles.counterBtn,
-      onClick: () => setScore(pi, currentHole.key, "strokes", s.strokes - 1)
+      style: S.cBtn,
+      onClick: () => updateScore(pi, "strokes", s.strokes - 1)
     }, "\u2212"), /*#__PURE__*/React.createElement("span", {
-      style: styles.counterValue
+      style: S.cVal
     }, s.strokes), /*#__PURE__*/React.createElement("button", {
-      style: styles.counterBtnPlus,
-      onClick: () => setScore(pi, currentHole.key, "strokes", s.strokes + 1)
+      style: S.cBtnPlus,
+      onClick: () => updateScore(pi, "strokes", s.strokes + 1)
     }, "+"))), /*#__PURE__*/React.createElement("div", {
-      style: styles.scoreRow
+      style: S.scoreRow
     }, /*#__PURE__*/React.createElement("span", {
-      style: styles.scoreLabel
-    }, "Penalit\xE0", /*#__PURE__*/React.createElement("span", {
-      style: styles.penaltyHint
-    }, " (+2 per infrazione)")), /*#__PURE__*/React.createElement("div", {
-      style: styles.counterGroup
+      style: S.scoreLabel
+    }, "Penalit\xE0 ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 10,
+        opacity: 0.6
+      }
+    }, "(+2)")), /*#__PURE__*/React.createElement("div", {
+      style: S.counterGroup
     }, /*#__PURE__*/React.createElement("button", {
-      style: styles.counterBtn,
-      onClick: () => setScore(pi, currentHole.key, "penalties", s.penalties - 2)
+      style: S.cBtn,
+      onClick: () => updateScore(pi, "penalties", s.penalties - 2)
     }, "\u22122"), /*#__PURE__*/React.createElement("span", {
       style: {
-        ...styles.counterValue,
+        ...S.cVal,
         color: s.penalties > 0 ? "#ef4444" : undefined
       }
     }, s.penalties > 0 ? `+${s.penalties}` : "0"), /*#__PURE__*/React.createElement("button", {
       style: {
-        ...styles.counterBtnPlus,
+        ...S.cBtnPlus,
         background: "rgba(239,68,68,0.2)",
         color: "#ef4444"
       },
-      onClick: () => setScore(pi, currentHole.key, "penalties", s.penalties + 2)
-    }, "+2"))), /*#__PURE__*/React.createElement("button", {
-      style: {
-        ...styles.bonusBtn,
-        ...(isBonus ? styles.bonusBtnActive : {})
-      },
-      onClick: () => toggleBonusHole(pi, currentHole.key)
-    }, isBonus ? "★ Buca bonus attiva" : "☆ Imposta come buca bonus"), totalShots > 0 && /*#__PURE__*/React.createElement("div", {
-      style: styles.holeTotalRow
+      onClick: () => updateScore(pi, "penalties", s.penalties + 2)
+    }, "+2"))), totalShots > 0 && /*#__PURE__*/React.createElement("div", {
+      style: S.holeTotalRow
     }, /*#__PURE__*/React.createElement("span", null, "Totale buca:"), /*#__PURE__*/React.createElement("strong", null, totalShots)));
-  })), /*#__PURE__*/React.createElement("div", {
-    style: styles.navArrows
-  }, /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
-      ...styles.navArrowBtn,
-      opacity: activeHoleIdx > 0 ? 1 : 0.3
-    },
-    onClick: () => setActiveHoleIdx(Math.max(0, activeHoleIdx - 1)),
-    disabled: activeHoleIdx === 0
-  }, "\u2190 Precedente"), activeHoleIdx < playHoles.length - 1 ? /*#__PURE__*/React.createElement("button", {
-    style: styles.navArrowBtnNext,
-    onClick: () => setActiveHoleIdx(activeHoleIdx + 1)
-  }, "Prossima \u2192") : /*#__PURE__*/React.createElement("button", {
-    style: styles.navArrowBtnFinish,
-    onClick: () => setPhase(PHASES.SUMMARY)
-  }, "Classifica \u2192"))), phase === PHASES.SUMMARY && /*#__PURE__*/React.createElement("div", {
-    style: styles.summaryContainer
+      display: "flex",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: S.secondaryBtn,
+    onClick: () => {
+      setEditingHoleIdx(null);
+      setPhase(PHASES.PICK_HOLE);
+    }
+  }, "\u2190 Annulla"), /*#__PURE__*/React.createElement("button", {
+    style: S.primaryBtn,
+    onClick: editingHoleIdx !== null ? confirmEditHole : confirmHole
+  }, "\u2713 Conferma buca"))), phase === PHASES.SUMMARY && /*#__PURE__*/React.createElement("div", {
+    style: S.section
   }, /*#__PURE__*/React.createElement("h2", {
-    style: styles.summaryTitle
-  }, "Classifica Finale"), players.map((p, i) => ({
-    name: p.name,
-    idx: i,
-    diff: getPlayerDiff(i),
-    total: getPlayerTotal(i, true),
-    par: getPlayerPar(i)
-  })).sort((a, b) => a.diff - b.diff).map((p, rank) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Outfit', sans-serif",
+      fontSize: 22,
+      fontWeight: 800,
+      color: "#fff",
+      marginBottom: 16,
+      textAlign: "center"
+    }
+  }, "Classifica"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      marginBottom: 14,
+      color: "rgba(255,255,255,0.4)",
+      fontSize: 12
+    }
+  }, "Percorso: ", playedHoles.map(h => h.number).join(" → "), " \xB7 ", playedHoles.length, " buche \xB7 Par ", playedHoles.length * PAR_PER_HOLE), getRankedPlayers().map((p, rank) => /*#__PURE__*/React.createElement("div", {
     key: p.idx,
     style: {
-      ...styles.leaderRow,
-      ...(rank === 0 ? styles.leaderRowFirst : {})
+      ...S.leaderRow,
+      ...(rank === 0 ? S.leaderRowFirst : {})
     }
   }, /*#__PURE__*/React.createElement("div", {
-    style: styles.leaderRank
-  }, rank === 0 ? "🏆" : `${rank + 1}°`), /*#__PURE__*/React.createElement("div", {
-    style: styles.leaderInfo
-  }, /*#__PURE__*/React.createElement("span", {
-    style: styles.leaderName
-  }, p.name), /*#__PURE__*/React.createElement("span", {
-    style: styles.leaderDetail
-  }, p.total, " colpi \xB7 Par ", p.par, bonusHoles[p.idx] && /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 Bonus: Buca ", playHoles.find(h => h.key === bonusHoles[p.idx])?.number))), /*#__PURE__*/React.createElement("div", {
     style: {
-      ...styles.leaderDiff,
+      fontSize: 20,
+      fontWeight: 700,
+      minWidth: 36,
+      textAlign: "center"
+    }
+  }, rank === 0 ? "🏆" : `${rank + 1}°`), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      display: "flex",
+      flexDirection: "column",
+      gap: 2
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 16,
+      fontWeight: 700,
+      color: "#fff"
+    }
+  }, p.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "rgba(255,255,255,0.45)"
+    }
+  }, p.total, " colpi \xB7 Buche vinte: ", p.holesWon, p.bonusHoleIdx !== undefined && /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 Bonus: Buca ", playedHoles[p.bonusHoleIdx]?.number))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 800,
+      fontFamily: "'Outfit', sans-serif",
       color: p.diff < 0 ? "#22c55e" : p.diff === 0 ? "#e2e8f0" : "#ef4444"
     }
   }, p.diff > 0 ? `+${p.diff}` : p.diff === 0 ? "E" : p.diff))), /*#__PURE__*/React.createElement("div", {
-    style: styles.scorecardSection
+    style: S.card2
   }, /*#__PURE__*/React.createElement("h3", {
-    style: styles.scorecardTitle
+    style: {
+      fontFamily: "'Outfit', sans-serif",
+      fontSize: 15,
+      fontWeight: 700,
+      color: "#fff",
+      marginBottom: 12
+    }
   }, "Dettaglio buche"), /*#__PURE__*/React.createElement("div", {
-    style: styles.scorecardScroll
+    style: {
+      overflowX: "auto"
+    }
   }, /*#__PURE__*/React.createElement("table", {
-    style: styles.table
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 13
+    }
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
-    style: styles.th
+    style: S.th
+  }, "#"), /*#__PURE__*/React.createElement("th", {
+    style: S.th
   }, "Buca"), players.map((p, i) => /*#__PURE__*/React.createElement("th", {
     key: i,
-    style: styles.th
-  }, p.name)))), /*#__PURE__*/React.createElement("tbody", null, playHoles.map(h => /*#__PURE__*/React.createElement("tr", {
-    key: h.key
-  }, /*#__PURE__*/React.createElement("td", {
-    style: styles.td
-  }, /*#__PURE__*/React.createElement("div", {
+    style: S.th
+  }, p.name)))), /*#__PURE__*/React.createElement("tbody", null, playedHoles.map((h, hi) => {
+    let best = Infinity;
+    let bestCount = 0;
+    players.forEach((_, pi) => {
+      const s = h.scores[pi] || {
+        strokes: 0,
+        penalties: 0
+      };
+      const t = s.strokes + s.penalties;
+      if (t > 0 && t < best) {
+        best = t;
+        bestCount = 1;
+      } else if (t > 0 && t === best) bestCount++;
+    });
+    return /*#__PURE__*/React.createElement("tr", {
+      key: hi
+    }, /*#__PURE__*/React.createElement("td", {
+      style: S.td
+    }, hi + 1), /*#__PURE__*/React.createElement("td", {
+      style: S.td
+    }, h.number), players.map((_, pi) => {
+      const s = h.scores[pi] || {
+        strokes: 0,
+        penalties: 0
+      };
+      const total = s.strokes + s.penalties;
+      const isB = bonusHoles[pi] === hi;
+      const diff = total - PAR_PER_HOLE;
+      const isW = total > 0 && total === best && bestCount === 1;
+      return /*#__PURE__*/React.createElement("td", {
+        key: pi,
+        style: {
+          ...S.td,
+          ...(isB ? {
+            textDecoration: "line-through",
+            opacity: 0.4
+          } : {}),
+          color: total === 0 ? "rgba(255,255,255,0.2)" : diff < 0 ? "#22c55e" : diff === 0 ? "#e2e8f0" : "#ef4444",
+          fontWeight: isW ? 800 : 600
+        }
+      }, total === 0 ? "–" : total, s.penalties > 0 && !isB && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          color: "#ef4444",
+          marginLeft: 2
+        }
+      }, "(", s.strokes, "+", s.penalties, ")"), isW && !isB && /*#__PURE__*/React.createElement("span", {
+        style: {
+          marginLeft: 2
+        }
+      }, "\u25CF"), isB && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          marginLeft: 4
+        }
+      }, "\u2605"));
+    }));
+  }), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 4
-    }
-  }, h.number, h.totalReps > 1 && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 10,
-      opacity: 0.5
-    }
-  }, "(", h.rep, ")"))), players.map((_, pi) => {
-    const s = getScore(pi, h.key);
-    const total = s.strokes + s.penalties;
-    const isBonus = bonusHoles[pi] === h.key;
-    const diff = total - PAR_PER_HOLE;
-    return /*#__PURE__*/React.createElement("td", {
-      key: pi,
-      style: {
-        ...styles.td,
-        ...(isBonus ? {
-          textDecoration: "line-through",
-          opacity: 0.4
-        } : {}),
-        color: total === 0 ? "rgba(255,255,255,0.2)" : diff < 0 ? "#22c55e" : diff === 0 ? "#e2e8f0" : "#ef4444"
-      }
-    }, total === 0 ? "–" : total, s.penalties > 0 && !isBonus && /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 10,
-        color: "#ef4444",
-        marginLeft: 2
-      }
-    }, "(", s.strokes, "+", s.penalties, ")"), isBonus && /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 10,
-        marginLeft: 4
-      }
-    }, "\u2605"));
-  }))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...styles.td,
-      ...styles.totalRow
-    }
+      ...S.td,
+      ...S.totalRow
+    },
+    colSpan: 2
   }, "TOT"), players.map((_, pi) => /*#__PURE__*/React.createElement("td", {
     key: pi,
     style: {
-      ...styles.td,
-      ...styles.totalRow
+      ...S.td,
+      ...S.totalRow
     }
-  }, getPlayerTotal(pi, true)))))))), /*#__PURE__*/React.createElement("div", {
-    style: styles.exportSection
+  }, getPlayerTotal(pi, true))))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "rgba(255,255,255,0.3)",
+      marginTop: 8
+    }
+  }, "\u25CF = buca vinta \xB7 \u2605 = buca bonus")), /*#__PURE__*/React.createElement("div", {
+    style: S.card2
   }, /*#__PURE__*/React.createElement("h3", {
-    style: styles.exportTitle
-  }, "Esporta risultati"), /*#__PURE__*/React.createElement("div", {
-    style: styles.exportBtns
+    style: {
+      fontFamily: "'Outfit', sans-serif",
+      fontSize: 15,
+      fontWeight: 700,
+      color: "#f59e0b",
+      marginBottom: 12
+    }
+  }, "\u2605 Seleziona buca bonus"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: "rgba(255,255,255,0.4)",
+      marginBottom: 12
+    }
+  }, "Per ogni giocatore, scegli la buca da escludere dal conteggio"), players.map((p, pi) => /*#__PURE__*/React.createElement("div", {
+    key: pi,
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: "#fff",
+      marginBottom: 6,
+      display: "flex",
+      alignItems: "center",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: "50%",
+      background: PLAYER_COLORS[pi % 6],
+      display: "inline-block"
+    }
+  }), p.name, bonusHoles[pi] !== undefined && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: "#f59e0b"
+    }
+  }, " \u2192 Buca ", playedHoles[bonusHoles[pi]]?.number)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 4
+    }
+  }, playedHoles.map((h, hi) => /*#__PURE__*/React.createElement("button", {
+    key: hi,
+    style: {
+      ...S.bonusChip,
+      ...(bonusHoles[pi] === hi ? S.bonusChipActive : {})
+    },
+    onClick: () => toggleBonusHole(pi, hi)
+  }, h.number)))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...S.card2,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 600,
+      color: "rgba(255,255,255,0.4)",
+      marginBottom: 10
+    }
+  }, "Esporta"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10
+    }
   }, /*#__PURE__*/React.createElement("button", {
-    style: styles.exportImgBtn,
+    style: S.exportImgBtn,
     onClick: exportImage
-  }, "\uD83D\uDCF8 Salva immagine"), /*#__PURE__*/React.createElement("button", {
-    style: styles.exportTxtBtn,
+  }, "\uD83D\uDCF8 Immagine"), /*#__PURE__*/React.createElement("button", {
+    style: S.exportTxtBtn,
     onClick: exportText
-  }, "\uD83D\uDCDD Nota di testo"))), /*#__PURE__*/React.createElement("div", {
-    style: styles.summaryActions
+  }, "\uD83D\uDCDD Testo"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10
+    }
   }, /*#__PURE__*/React.createElement("button", {
-    style: styles.backToPlayBtn,
-    onClick: () => setPhase(PHASES.PLAY)
-  }, "\u2190 Torna alla partita"), /*#__PURE__*/React.createElement("button", {
-    style: styles.newGameBtn,
+    style: S.secondaryBtn,
+    onClick: () => setPhase(PHASES.PICK_HOLE)
+  }, "\u2190 Continua"), /*#__PURE__*/React.createElement("button", {
+    style: S.primaryBtn,
     onClick: () => {
       setPhase(PHASES.SETUP);
-      setScores({});
+      setPlayedHoles([]);
       setBonusHoles({});
     }
   }, "Nuova partita"))), imagePreview && /*#__PURE__*/React.createElement("div", {
-    style: styles.overlay,
+    style: S.overlay,
     onClick: () => setImagePreview(null)
   }, /*#__PURE__*/React.createElement("div", {
-    style: styles.overlayContent,
+    style: S.overlayInner,
     onClick: e => e.stopPropagation()
   }, /*#__PURE__*/React.createElement("p", {
-    style: styles.overlayHint
-  }, "Tieni premuto sull'immagine per salvarla"), /*#__PURE__*/React.createElement("img", {
+    style: {
+      color: "rgba(255,255,255,0.5)",
+      fontSize: 13,
+      textAlign: "center"
+    }
+  }, "Tieni premuto per salvare"), /*#__PURE__*/React.createElement("img", {
     src: imagePreview,
     alt: "Scorecard",
-    style: styles.overlayImg
+    style: {
+      width: "100%",
+      borderRadius: 12,
+      border: "1px solid rgba(255,255,255,0.1)"
+    }
   }), /*#__PURE__*/React.createElement("div", {
-    style: styles.overlayActions
+    style: {
+      display: "flex",
+      gap: 10,
+      width: "100%"
+    }
   }, /*#__PURE__*/React.createElement("button", {
-    style: styles.overlayShareBtn,
+    style: S.exportImgBtn,
     onClick: async () => {
       try {
-        const res = await fetch(imagePreview);
-        const blob = await res.blob();
-        const file = new File([blob], "pitch-putt.png", {
+        const r = await fetch(imagePreview);
+        const b = await r.blob();
+        const f = new File([b], "pitch-putt.png", {
           type: "image/png"
         });
         if (navigator.share && navigator.canShare?.({
-          files: [file]
-        })) {
-          await navigator.share({
-            files: [file],
-            title: "Pitch & Putt"
-          });
-        } else if (navigator.share) {
-          await navigator.share({
-            title: "Pitch & Putt",
-            text: "Risultati Pitch & Putt",
-            url: imagePreview
-          });
-        } else {
-          alert("Condivisione non disponibile. Tieni premuto sull'immagine per salvarla.");
-        }
+          files: [f]
+        })) await navigator.share({
+          files: [f],
+          title: "Pitch & Putt"
+        });else alert("Tieni premuto sull'immagine per salvarla");
       } catch (e) {}
     }
   }, "\uD83D\uDCE4 Condividi"), /*#__PURE__*/React.createElement("button", {
-    style: styles.overlayCloseBtn,
+    style: S.secondaryBtn,
     onClick: () => setImagePreview(null)
   }, "\u2715 Chiudi")))));
 }
-const COLORS = {
+const C = {
   bg: "#0c1a0c",
   card: "rgba(255,255,255,0.05)",
-  cardBorder: "rgba(255,255,255,0.08)",
+  border: "rgba(255,255,255,0.08)",
   accent: "#22c55e",
   accentDim: "rgba(34,197,94,0.15)",
   text: "#e2e8f0",
-  textDim: "rgba(255,255,255,0.45)",
-  danger: "#ef4444",
-  white: "#ffffff"
+  dim: "rgba(255,255,255,0.45)",
+  white: "#fff"
 };
-const PLAYER_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4"];
-const styles = {
+const S = {
   container: {
     fontFamily: "'DM Sans', sans-serif",
-    background: `linear-gradient(180deg, ${COLORS.bg} 0%, #0f2010 100%)`,
+    background: `linear-gradient(180deg,${C.bg} 0%,#0f2010 100%)`,
     minHeight: "100vh",
-    color: COLORS.text,
+    color: C.text,
     maxWidth: 520,
     margin: "0 auto",
     paddingBottom: 40
@@ -800,7 +944,7 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
     padding: "16px 20px",
-    borderBottom: `1px solid ${COLORS.cardBorder}`,
+    borderBottom: `1px solid ${C.border}`,
     position: "sticky",
     top: 0,
     background: "rgba(12,26,12,0.95)",
@@ -812,26 +956,23 @@ const styles = {
     alignItems: "center",
     gap: 12
   },
-  logoMark: {
-    fontSize: 28
-  },
   title: {
     fontFamily: "'Outfit', sans-serif",
     fontSize: 20,
     fontWeight: 700,
-    color: COLORS.white,
+    color: C.white,
     letterSpacing: "-0.02em"
   },
   subtitle: {
     fontSize: 12,
-    color: COLORS.textDim,
+    color: C.dim,
     fontWeight: 400,
     marginTop: 1
   },
-  summaryBtn: {
-    background: COLORS.accentDim,
+  headerBtn: {
+    background: C.accentDim,
     border: `1px solid rgba(34,197,94,0.3)`,
-    color: COLORS.accent,
+    color: C.accent,
     padding: "7px 14px",
     borderRadius: 8,
     fontSize: 13,
@@ -839,63 +980,38 @@ const styles = {
     cursor: "pointer",
     fontFamily: "'DM Sans', sans-serif"
   },
-  // SETUP
-  setupContainer: {
+  section: {
     padding: "20px 16px",
     display: "flex",
     flexDirection: "column",
-    gap: 16
+    gap: 14
   },
   card: {
-    background: COLORS.card,
-    border: `1px solid ${COLORS.cardBorder}`,
+    background: C.card,
+    border: `1px solid ${C.border}`,
     borderRadius: 16,
-    padding: "20px"
+    padding: 20
+  },
+  card2: {
+    background: C.card,
+    border: `1px solid ${C.border}`,
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 4
   },
   cardTitle: {
     fontFamily: "'Outfit', sans-serif",
     fontSize: 16,
     fontWeight: 700,
-    color: COLORS.white,
+    color: C.white,
     marginBottom: 14
   },
-  cardHeaderRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10
-  },
-  configToggle: {
-    background: "transparent",
-    border: `1px solid ${COLORS.cardBorder}`,
-    color: COLORS.accent,
-    padding: "5px 12px",
-    borderRadius: 6,
-    fontSize: 12,
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif"
-  },
-  configHint: {
-    fontSize: 13,
-    color: COLORS.textDim,
-    marginBottom: 8
-  },
-  playersList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8
-  },
-  playerRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8
-  },
-  playerBadge: {
+  badge: {
     width: 28,
     height: 28,
     borderRadius: "50%",
-    background: COLORS.accentDim,
-    color: COLORS.accent,
+    background: C.accentDim,
+    color: C.accent,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -903,13 +1019,13 @@ const styles = {
     fontWeight: 700,
     flexShrink: 0
   },
-  playerInput: {
+  input: {
     flex: 1,
     background: "rgba(255,255,255,0.06)",
-    border: `1px solid ${COLORS.cardBorder}`,
+    border: `1px solid ${C.border}`,
     borderRadius: 10,
     padding: "10px 14px",
-    color: COLORS.white,
+    color: C.white,
     fontSize: 15,
     fontFamily: "'DM Sans', sans-serif"
   },
@@ -919,142 +1035,116 @@ const styles = {
     borderRadius: "50%",
     background: "rgba(239,68,68,0.1)",
     border: "none",
-    color: COLORS.danger,
+    color: "#ef4444",
     cursor: "pointer",
     fontSize: 12,
     display: "flex",
     alignItems: "center",
     justifyContent: "center"
   },
-  addPlayerBtn: {
+  addBtn: {
     width: "100%",
     background: "transparent",
     border: `1px dashed rgba(34,197,94,0.3)`,
-    color: COLORS.accent,
-    padding: "10px",
+    color: C.accent,
+    padding: 10,
     borderRadius: 10,
     fontSize: 14,
     cursor: "pointer",
     marginTop: 8,
     fontFamily: "'DM Sans', sans-serif"
   },
-  holesGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 8,
-    marginTop: 8
-  },
-  holeConfigItem: {
-    background: "rgba(255,255,255,0.04)",
-    borderRadius: 10,
-    padding: "10px 8px",
-    textAlign: "center"
-  },
-  holeLabel: {
-    fontSize: 12,
-    color: COLORS.textDim,
-    display: "block",
-    marginBottom: 6
-  },
-  timesControl: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8
-  },
-  timesBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
-    background: "rgba(255,255,255,0.08)",
+  primaryBtn: {
+    flex: 1,
+    background: "linear-gradient(135deg,#22c55e,#16a34a)",
     border: "none",
-    color: COLORS.text,
-    cursor: "pointer",
-    fontSize: 14,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  timesValue: {
-    fontSize: 15,
-    fontWeight: 700,
-    color: COLORS.white,
-    minWidth: 24,
-    textAlign: "center"
-  },
-  startBtn: {
-    background: `linear-gradient(135deg, #22c55e, #16a34a)`,
-    border: "none",
-    color: COLORS.white,
-    padding: "16px",
-    borderRadius: 14,
-    fontSize: 17,
+    color: C.white,
+    padding: 14,
+    borderRadius: 12,
+    fontSize: 16,
     fontWeight: 700,
     cursor: "pointer",
     fontFamily: "'Outfit', sans-serif",
-    letterSpacing: "-0.01em",
-    marginTop: 4
+    letterSpacing: "-0.01em"
   },
-  // PLAY
-  playContainer: {
-    padding: "12px 0"
-  },
-  holeNav: {
-    padding: "0 16px",
-    marginBottom: 12,
-    overflowX: "auto"
-  },
-  holeNavScroll: {
-    display: "flex",
-    gap: 6,
-    paddingBottom: 4,
-    overflowX: "auto"
-  },
-  holeNavBtn: {
-    minWidth: 40,
-    height: 40,
-    borderRadius: 10,
+  secondaryBtn: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
     background: "rgba(255,255,255,0.05)",
-    border: `1px solid ${COLORS.cardBorder}`,
-    color: COLORS.textDim,
+    border: `1px solid ${C.border}`,
+    color: C.dim,
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'DM Sans', sans-serif"
+  },
+  finishBtn: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    background: C.accentDim,
+    border: `1px solid rgba(34,197,94,0.3)`,
+    color: C.accent,
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'DM Sans', sans-serif"
+  },
+  keypad: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: 10,
+    marginTop: 8
+  },
+  keypadBtn: {
+    height: 72,
+    borderRadius: 14,
+    background: "rgba(255,255,255,0.06)",
+    border: `1px solid ${C.border}`,
+    color: C.white,
     cursor: "pointer",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
-    padding: "2px 8px"
+    gap: 2
   },
-  holeNavBtnActive: {
-    background: COLORS.accent,
-    borderColor: COLORS.accent,
-    color: COLORS.white
+  keypadCount: {
+    fontSize: 10,
+    color: C.accent,
+    fontWeight: 600
   },
-  holeNavBtnDone: {
-    borderColor: "rgba(34,197,94,0.3)",
-    color: COLORS.accent
+  routeBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap"
   },
-  holeNavNum: {
-    fontSize: 14,
-    fontWeight: 700
+  routeChip: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    background: "rgba(34,197,94,0.1)",
+    border: `1px solid rgba(34,197,94,0.2)`,
+    color: C.accent,
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center"
   },
-  holeNavRep: {
-    fontSize: 8,
-    opacity: 0.7,
-    marginTop: -2
-  },
-  currentHoleHeader: {
+  holeHeader: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
-    padding: "0 20px",
-    marginBottom: 12
+    alignItems: "center"
   },
-  currentHoleTitle: {
+  holeTitle: {
     fontFamily: "'Outfit', sans-serif",
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 800,
-    color: COLORS.white
+    color: C.white
   },
   parBadge: {
     background: "rgba(255,255,255,0.08)",
@@ -1062,50 +1152,19 @@ const styles = {
     borderRadius: 8,
     fontSize: 13,
     fontWeight: 600,
-    color: COLORS.textDim
-  },
-  scoresContainer: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    padding: "0 16px"
+    color: C.dim
   },
   playerCard: {
-    background: COLORS.card,
-    border: `1px solid ${COLORS.cardBorder}`,
+    background: C.card,
+    border: `1px solid ${C.border}`,
     borderRadius: 14,
     padding: "14px 16px"
   },
-  playerCardBonus: {
-    border: `1px solid rgba(245,158,11,0.3)`,
-    background: "rgba(245,158,11,0.05)"
-  },
-  playerCardHeader: {
+  playerCardHead: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12
-  },
-  playerCardName: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: COLORS.white,
-    display: "flex",
-    alignItems: "center",
-    gap: 8
-  },
-  playerDot: i => ({
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    background: PLAYER_COLORS[i % PLAYER_COLORS.length],
-    display: "inline-block"
-  }),
-  diffBadge: {
-    fontSize: 13,
-    fontWeight: 700,
-    padding: "3px 10px",
-    borderRadius: 6
   },
   scoreRow: {
     display: "flex",
@@ -1115,72 +1174,50 @@ const styles = {
   },
   scoreLabel: {
     fontSize: 14,
-    color: COLORS.textDim
-  },
-  penaltyHint: {
-    fontSize: 10,
-    opacity: 0.6
+    color: C.dim
   },
   counterGroup: {
     display: "flex",
-    alignItems: "center",
-    gap: 0
+    alignItems: "center"
   },
-  counterBtn: {
+  cBtn: {
     width: 40,
     height: 38,
     borderRadius: "10px 0 0 10px",
     background: "rgba(255,255,255,0.06)",
-    border: `1px solid ${COLORS.cardBorder}`,
+    border: `1px solid ${C.border}`,
     borderRight: "none",
-    color: COLORS.text,
+    color: C.text,
     cursor: "pointer",
     fontSize: 16,
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 600
   },
-  counterValue: {
+  cVal: {
     minWidth: 44,
     height: 38,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     background: "rgba(255,255,255,0.03)",
-    borderTop: `1px solid ${COLORS.cardBorder}`,
-    borderBottom: `1px solid ${COLORS.cardBorder}`,
+    borderTop: `1px solid ${C.border}`,
+    borderBottom: `1px solid ${C.border}`,
     fontSize: 18,
     fontWeight: 700,
-    color: COLORS.white
+    color: C.white
   },
-  counterBtnPlus: {
+  cBtnPlus: {
     width: 40,
     height: 38,
     borderRadius: "0 10px 10px 0",
-    background: COLORS.accentDim,
+    background: C.accentDim,
     border: `1px solid rgba(34,197,94,0.2)`,
     borderLeft: "none",
-    color: COLORS.accent,
+    color: C.accent,
     cursor: "pointer",
     fontSize: 16,
     fontFamily: "'DM Sans', sans-serif",
     fontWeight: 600
-  },
-  bonusBtn: {
-    width: "100%",
-    background: "transparent",
-    border: `1px solid ${COLORS.cardBorder}`,
-    color: COLORS.textDim,
-    padding: "8px",
-    borderRadius: 8,
-    fontSize: 12,
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif",
-    marginTop: 4
-  },
-  bonusBtnActive: {
-    background: "rgba(245,158,11,0.1)",
-    borderColor: "rgba(245,158,11,0.3)",
-    color: "#f59e0b"
   },
   holeTotalRow: {
     display: "flex",
@@ -1188,70 +1225,17 @@ const styles = {
     alignItems: "center",
     marginTop: 10,
     paddingTop: 8,
-    borderTop: `1px solid ${COLORS.cardBorder}`,
+    borderTop: `1px solid ${C.border}`,
     fontSize: 14,
-    color: COLORS.textDim
-  },
-  navArrows: {
-    display: "flex",
-    gap: 10,
-    padding: "16px 16px 0"
-  },
-  navArrowBtn: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: 12,
-    background: "rgba(255,255,255,0.05)",
-    border: `1px solid ${COLORS.cardBorder}`,
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif"
-  },
-  navArrowBtnNext: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: 12,
-    background: COLORS.accentDim,
-    border: `1px solid rgba(34,197,94,0.3)`,
-    color: COLORS.accent,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif"
-  },
-  navArrowBtnFinish: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: 12,
-    background: `linear-gradient(135deg, #22c55e, #16a34a)`,
-    border: "none",
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: "pointer",
-    fontFamily: "'Outfit', sans-serif"
-  },
-  // SUMMARY
-  summaryContainer: {
-    padding: "20px 16px"
-  },
-  summaryTitle: {
-    fontFamily: "'Outfit', sans-serif",
-    fontSize: 22,
-    fontWeight: 800,
-    color: COLORS.white,
-    marginBottom: 16,
-    textAlign: "center"
+    color: C.dim
   },
   leaderRow: {
     display: "flex",
     alignItems: "center",
     gap: 12,
     padding: "14px 16px",
-    background: COLORS.card,
-    border: `1px solid ${COLORS.cardBorder}`,
+    background: C.card,
+    border: `1px solid ${C.border}`,
     borderRadius: 14,
     marginBottom: 8
   },
@@ -1259,60 +1243,11 @@ const styles = {
     background: "rgba(34,197,94,0.08)",
     border: `1px solid rgba(34,197,94,0.25)`
   },
-  leaderRank: {
-    fontSize: 20,
-    fontWeight: 700,
-    minWidth: 36,
-    textAlign: "center"
-  },
-  leaderInfo: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: 2
-  },
-  leaderName: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: COLORS.white
-  },
-  leaderDetail: {
-    fontSize: 12,
-    color: COLORS.textDim
-  },
-  leaderDiff: {
-    fontSize: 22,
-    fontWeight: 800,
-    fontFamily: "'Outfit', sans-serif"
-  },
-  // Scorecard table
-  scorecardSection: {
-    marginTop: 20,
-    background: COLORS.card,
-    border: `1px solid ${COLORS.cardBorder}`,
-    borderRadius: 14,
-    padding: 16
-  },
-  scorecardTitle: {
-    fontFamily: "'Outfit', sans-serif",
-    fontSize: 15,
-    fontWeight: 700,
-    color: COLORS.white,
-    marginBottom: 12
-  },
-  scorecardScroll: {
-    overflowX: "auto"
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: 13
-  },
   th: {
     textAlign: "left",
     padding: "6px 10px",
-    borderBottom: `1px solid ${COLORS.cardBorder}`,
-    color: COLORS.textDim,
+    borderBottom: `1px solid ${C.border}`,
+    color: C.dim,
     fontSize: 11,
     fontWeight: 600,
     textTransform: "uppercase",
@@ -1320,67 +1255,37 @@ const styles = {
   },
   td: {
     padding: "7px 10px",
-    borderBottom: `1px solid rgba(255,255,255,0.03)`,
+    borderBottom: "1px solid rgba(255,255,255,0.03)",
     fontWeight: 600
   },
   totalRow: {
-    borderTop: `2px solid ${COLORS.accent}`,
-    color: COLORS.white,
+    borderTop: `2px solid ${C.accent}`,
+    color: C.white,
     fontWeight: 800,
     fontSize: 15
   },
-  summaryActions: {
-    display: "flex",
-    gap: 10,
-    marginTop: 20
-  },
-  backToPlayBtn: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: 12,
+  bonusChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     background: "rgba(255,255,255,0.05)",
-    border: `1px solid ${COLORS.cardBorder}`,
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif"
-  },
-  newGameBtn: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: 12,
-    background: `linear-gradient(135deg, #22c55e, #16a34a)`,
-    border: "none",
-    color: COLORS.white,
+    border: `1px solid ${C.border}`,
+    color: C.dim,
     fontSize: 14,
     fontWeight: 700,
     cursor: "pointer",
-    fontFamily: "'Outfit', sans-serif"
-  },
-  // Export
-  exportSection: {
-    marginTop: 20,
-    background: "rgba(255,255,255,0.03)",
-    border: `1px solid ${COLORS.cardBorder}`,
-    borderRadius: 14,
-    padding: 16
-  },
-  exportTitle: {
-    fontFamily: "'Outfit', sans-serif",
-    fontSize: 14,
-    fontWeight: 600,
-    color: COLORS.textDim,
-    marginBottom: 10,
-    textAlign: "center"
-  },
-  exportBtns: {
     display: "flex",
-    gap: 10
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  bonusChipActive: {
+    background: "rgba(245,158,11,0.15)",
+    borderColor: "rgba(245,158,11,0.4)",
+    color: "#f59e0b"
   },
   exportImgBtn: {
     flex: 1,
-    padding: "12px",
+    padding: 12,
     borderRadius: 10,
     background: "rgba(59,130,246,0.12)",
     border: "1px solid rgba(59,130,246,0.25)",
@@ -1392,7 +1297,7 @@ const styles = {
   },
   exportTxtBtn: {
     flex: 1,
-    padding: "12px",
+    padding: 12,
     borderRadius: 10,
     background: "rgba(245,158,11,0.1)",
     border: "1px solid rgba(245,158,11,0.25)",
@@ -1402,7 +1307,6 @@ const styles = {
     cursor: "pointer",
     fontFamily: "'DM Sans', sans-serif"
   },
-  // Overlay
   overlay: {
     position: "fixed",
     inset: 0,
@@ -1414,7 +1318,7 @@ const styles = {
     justifyContent: "center",
     padding: 16
   },
-  overlayContent: {
+  overlayInner: {
     maxWidth: 440,
     width: "100%",
     maxHeight: "90vh",
@@ -1423,46 +1327,6 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
     gap: 12
-  },
-  overlayHint: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 13,
-    textAlign: "center",
-    fontFamily: "'DM Sans', sans-serif"
-  },
-  overlayImg: {
-    width: "100%",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.1)"
-  },
-  overlayActions: {
-    display: "flex",
-    gap: 10,
-    width: "100%"
-  },
-  overlayShareBtn: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: 10,
-    background: "rgba(34,197,94,0.15)",
-    border: "1px solid rgba(34,197,94,0.3)",
-    color: "#22c55e",
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif"
-  },
-  overlayCloseBtn: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: 10,
-    background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(255,255,255,0.1)",
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif"
   }
 };
 
